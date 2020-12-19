@@ -1,11 +1,6 @@
 # Weak supervised explainable deep anomaly detection
 
-
-
-* 3 Losses 
-* different datasets and OE methods
-
-
+I analyze the influence of weak supervision upon deep anomaly detection models. Hereby I test three different losses as well as different amounts of supervision drawn from different kinds of datasets.
 
 
 ## How to run?
