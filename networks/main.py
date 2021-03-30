@@ -18,7 +18,7 @@ def build_network(net_name, ae_net=None, loss="normal"):
                             'arrhythmia_DGM_M2', 'cardio_DGM_M2', 'satellite_DGM_M2', 'satimage-2_DGM_M2',
                             'shuttle_DGM_M2', 'thyroid_DGM_M2',
                             
-                            "mvtec_vgg", "mvtec_vgg_unfreeze")
+                            "mvtec_vgg", "mvtec_vgg_old", "mvtec_vgg_unfreeze")
     assert net_name in implemented_networks
 
     net = None
@@ -86,7 +86,6 @@ def build_network(net_name, ae_net=None, loss="normal"):
     if net_name == 'thyroid_DGM_M2':
         net = DeepGenerativeModel([6, 2, 4, [32, 16]])
         
-    #all layers frozen except the last one
     if net_name == "mvtec_vgg":
         net = torch.hub.load('pytorch/vision:v0.6.0', 'vgg16', pretrained=True)
         for param in net.parameters():
@@ -94,14 +93,20 @@ def build_network(net_name, ae_net=None, loss="normal"):
         net.classifier[6] = torch.nn.Linear(4096, 4096)
         net.l4 = torch.nn.Linear(4096,1)
         net.rep_dim = 4096
-      
-    #no layers frozen
+        
     if net_name == "mvtec_vgg_unfreeze":
         net = torch.hub.load('pytorch/vision:v0.6.0', 'vgg16', pretrained=True)
         net.classifier[6] = torch.nn.Linear(4096, 4096)
         net.l4 = torch.nn.Linear(4096,1)
         net.rep_dim = 4096
         
+    if net_name == "mvtec_vgg_old":
+        net = torch.hub.load('pytorch/vision:v0.6.0', 'vgg16', pretrained=True)
+        for param in net.parameters():
+            param.requires_grad = False
+        net.classifier[6] = torch.nn.Linear(4096, 4096)
+        #net.l4 = torch.nn.Linear(4096,1)
+        net.rep_dim = 4096
 
     return net
 

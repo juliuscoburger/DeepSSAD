@@ -12,6 +12,7 @@ from .imagenet22k import ImageNet22K_Dataset
 
 from .noise import Noise_Dataset
 from .MVTec import MVTec_Dataset
+from .MVTec_handformed import MVTec_Dataset_handformed
 
 import torch
 import torchvision.transforms as transforms
@@ -21,7 +22,6 @@ from kornia import gaussian_blur2d
 
 from skimage.transform import rotate as im_rotate
 from datasets.MVTec import MVTec, MVTec_Masks
-
 
 def ceil(x: float):
         return int(np.ceil(x))
@@ -241,7 +241,11 @@ class weak_supervision_Dataset(TorchvisionDataset):
             
             self.train_set = TensorDataset(outlier, f1, f2, idx)
             print(len(self.train_set))
-            
+        elif dataset == "mvtec_handformed":
+            print("handformed")
+            dataset = MVTec_Dataset_handformed(root=self.root, normal_class=nc)
+            self.train_set = dataset.train_set
+        
         elif dataset == "mvtec_all":
             print("mvtec_all")
             #imgnet_set = ImageNet22K_Dataset(root=self.root, size=size, seed=size).train_set

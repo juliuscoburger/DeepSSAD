@@ -1,16 +1,91 @@
-import time
-import torch
-import random
-import numpy as np
-import torch.optim as optim
-import torch.nn as nn
-import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics.pairwise import cosine_similarity
 from networks.main import build_network, build_autoencoder
 from datasets.main import load_dataset
+import time
+import torch
+import torch.optim as optim
+import random
+from sklearn.metrics import roc_auc_score
+import numpy as np
+import torch.nn as nn
+import torch
+from explain import grads, LRP, pixel_flipping
+import matplotlib.pyplot as plt
+
+
+
 from datasets.weak_sup import weak_supervision_Dataset
+import torchvision.transforms as transforms
+from datasets.MVTec import MVTec, MVTec_Masks
+from explain import grads, pixel_flipping, integrated_gradient, LRP_a1b0, LRP, plot_explaination, top_k_similarity
+from sklearn.metrics.pairwise import cosine_similarity
+
+
+
+
+def test_cosine_mvtec(model, normal_class=0):
+    classes = ['bottle', 'cable', 'capsule', 'carpet', 'grid', 'hazelnut', 'leather', 'metal_nut', 'pill', 'screw', 'tile', 'toothbrush', 'transistor', 'wood', 'zipper']
+    img_size = 224
+    test_transform = [transforms.Resize(img_size),transforms.CenterCrop(img_size),transforms.ToTensor()]
+    test_transform = transforms.Compose(test_transform)
+    anomaly_images = MVTec(root='./datasets/mvtec_anomaly_detection/' + classes[normal_class] + '/test', transform=test_transform, blur_outliers=True, blur_std=1.0)
+    ground_truth_images = MVTec_Masks(root='./datasets/mvtec_anomaly_detection/' + classes[normal_class] + '/ground_truth',transform=test_transform)
+    cs_list1 = []
+    cs_list2 = []
+    cs_list3 = []
+    cs_list4 = []
+    losses = []        
+    normal_count = 0
+    for i in range(0, len(anomaly_images)):
+        ai, t, _ , _ = anomaly_images.__getitem__(i)
+        if t!=0:
+            ground_truth, _, _, _ = ground_truth_images.__getitem__(i-normal_count)
+        
+        if t == 0:
+            normal_count += 1
+            continue
+        
+        ground_truth = (ground_truth[0]*3).clamp(max=1)
+        R = LRP_a1b0(model, ai)
+        r = R[0][0]
+        losses.append(torch.sum(R[-1][0]))
+        explaination = r[0]
+        explaination = explaination.clamp(min=0)
+        ground_truth = ground_truth.view(1,-1)
+        explaination = explaination.view(1,-1)
+
+        cs = cosine_similarity(ground_truth, explaination)
+        cs_list1.append(cs[0][0])
+
+        cs_list2.append(top_k_similarity(explaination, ground_truth, k=30))
+
+        cs_list3.append(top_k_similarity(explaination, ground_truth, k=2500))
+
+        ground_truth = list(map(int,ground_truth[0].cpu().data.numpy().tolist()))
+        explaination = explaination[0].cpu().data.numpy().tolist()
+        cs_list4.append(roc_auc_score(ground_truth, explaination))
+
+    losses = np.array(losses)
+
+    cs_list1=np.array(cs_list1)
+    mean1 = np.mean(cs_list1)
+    std1 = np.std(cs_list1)
+    
+    cs_list2=np.array(cs_list2)
+    mean2 = np.mean(cs_list2)
+    std2 = np.std(cs_list2)
+    
+    cs_list3=np.array(cs_list3)
+    mean3 = np.mean(cs_list3)
+    std3 = np.std(cs_list3)
+    
+    cs_list4=np.array(cs_list4)
+    mean4 = np.mean(cs_list4)
+    std4 = np.std(cs_list4)
+    
+    
+    print("Cosine:{:.3f}:{:.3f}; Top30:{:.3f}:{:.3f}; Top2500:{:.3f}:{:.3f}; PX_AUC:{:.3f}:{:.3f}".format(mean1*100, std1*100, mean2*100, std2*100, mean3*100, std3*100, mean4*100, std4*100), file=model.out_file)
+    
+    return [mean1, std1, mean2, std2, mean3, std3, mean4, std4]
 
 
 class DeepAD(object):
@@ -181,7 +256,7 @@ class DeepAD(object):
                 semi_targets_sum += torch.sum(semi_targets)
                 epoch_loss += loss.item()
                 
-                loss.backward()#retain_graph=True)
+                loss.backward()
                 optimizer.step()
 
                 n_batches += 1
@@ -228,13 +303,7 @@ class DeepAD(object):
                     dist = sig(out)
                     dist = dist.view(-1)
                 
-                
-                '''
-                if self.loss == "hypersphere":
-                    dist = torch.sum((outputs) ** 2, dim=1)
-                else:
-                    dist = torch.sum((outputs - self.c) ** 2, dim=1)
-                '''
+            
                    
                 loss = torch.mean(dist)
                 scores = dist
@@ -260,6 +329,14 @@ class DeepAD(object):
         
         self.test_auc = roc_auc_score(labels, scores)
         
+        
+        if self.dataset_name == "mvtec":
+            test_cosine_mvtec(self,normal_class=self.nc)
+            
+        
+    
+    
+    
     
     def save_results(self, export_path):
         f = open(export_path, "w")
@@ -320,7 +397,6 @@ class DeepAD(object):
 
     def set_network(self):
         self.c, self.baseline = self.init_center_c()
-
 
     def pretrain(self):
         self.ae_net = build_autoencoder(self.net_name)
